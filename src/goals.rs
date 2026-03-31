@@ -268,9 +268,7 @@ impl GoalRegistry {
             .tasks
             .iter()
             .filter(|(_, t)| t.status == TaskStatus::Waiting)
-            .filter_map(|(tid, t)| {
-                self.goals.get(&t.goal_id).map(|g| (*tid, g.priority))
-            })
+            .filter_map(|(tid, t)| self.goals.get(&t.goal_id).map(|g| (*tid, g.priority)))
             .collect();
 
         candidates.sort_by(|a, b| b.1.cmp(&a.1));
@@ -307,7 +305,11 @@ impl GoalRegistry {
             .filter_map(|(tid, t)| {
                 // Task has code itself, or parent goal has code.
                 let has_code = t.code.is_some()
-                    || self.goals.get(&t.goal_id).and_then(|g| g.code.as_ref()).is_some();
+                    || self
+                        .goals
+                        .get(&t.goal_id)
+                        .and_then(|g| g.code.as_ref())
+                        .is_some();
                 if has_code {
                     self.goals.get(&t.goal_id).map(|g| (*tid, g.priority))
                 } else {
@@ -325,7 +327,9 @@ impl GoalRegistry {
                 let goal_id = task.goal_id;
                 let desc = task.description.clone();
                 // Use per-task code (SPLIT subtasks) or fall back to goal code.
-                let code = task.code.clone()
+                let code = task
+                    .code
+                    .clone()
                     .or_else(|| self.goals.get(&goal_id).and_then(|g| g.code.clone()))
                     .unwrap_or_default();
 
@@ -417,9 +421,7 @@ impl GoalRegistry {
 
     pub fn merge_goal(&mut self, goal: Goal) {
         if let Some(existing) = self.goals.get(&goal.id) {
-            if goal.status.as_u8() > existing.status.as_u8()
-                || goal.priority != existing.priority
-            {
+            if goal.status.as_u8() > existing.status.as_u8() || goal.priority != existing.priority {
                 let mut merged_tasks = existing.task_ids.clone();
                 for tid in &goal.task_ids {
                     if !merged_tasks.contains(tid) {
@@ -542,7 +544,12 @@ impl GoalRegistry {
             let task = Task {
                 id: task_id,
                 goal_id,
-                description: format!("chunk {}/{}: {}", k + 1, n, task_code.chars().take(30).collect::<String>()),
+                description: format!(
+                    "chunk {}/{}: {}",
+                    k + 1,
+                    n,
+                    task_code.chars().take(30).collect::<String>()
+                ),
                 code: Some(task_code),
                 assigned_to: None,
                 status: TaskStatus::Waiting,
@@ -585,7 +592,12 @@ impl GoalRegistry {
             let task = Task {
                 id: task_id,
                 goal_id,
-                description: format!("fork {}/{}: {}", k + 1, n, code.chars().take(30).collect::<String>()),
+                description: format!(
+                    "fork {}/{}: {}",
+                    k + 1,
+                    n,
+                    code.chars().take(30).collect::<String>()
+                ),
                 code: None,
                 assigned_to: None,
                 status: TaskStatus::Waiting,
@@ -604,18 +616,44 @@ impl GoalRegistry {
     pub fn format_progress(&self, goal_id: GoalId) -> String {
         if let Some(goal) = self.goals.get(&goal_id) {
             let total = goal.task_ids.len();
-            let done = goal.task_ids.iter()
-                .filter(|tid| self.tasks.get(tid).map(|t| t.status == TaskStatus::Done).unwrap_or(false))
+            let done = goal
+                .task_ids
+                .iter()
+                .filter(|tid| {
+                    self.tasks
+                        .get(tid)
+                        .map(|t| t.status == TaskStatus::Done)
+                        .unwrap_or(false)
+                })
                 .count();
-            let failed = goal.task_ids.iter()
-                .filter(|tid| self.tasks.get(tid).map(|t| t.status == TaskStatus::Failed).unwrap_or(false))
+            let failed = goal
+                .task_ids
+                .iter()
+                .filter(|tid| {
+                    self.tasks
+                        .get(tid)
+                        .map(|t| t.status == TaskStatus::Failed)
+                        .unwrap_or(false)
+                })
                 .count();
-            let running = goal.task_ids.iter()
-                .filter(|tid| self.tasks.get(tid).map(|t| t.status == TaskStatus::Running).unwrap_or(false))
+            let running = goal
+                .task_ids
+                .iter()
+                .filter(|tid| {
+                    self.tasks
+                        .get(tid)
+                        .map(|t| t.status == TaskStatus::Running)
+                        .unwrap_or(false)
+                })
                 .count();
             format!(
                 "goal #{} [{}]: {}/{} done, {} running, {} failed\n",
-                goal.id, goal.status.label(), done, total, running, failed
+                goal.id,
+                goal.status.label(),
+                done,
+                total,
+                running,
+                failed
             )
         } else {
             format!("goal #{} not found\n", goal_id)
@@ -625,7 +663,8 @@ impl GoalRegistry {
     /// Collect all subtask results for a goal as a flat list.
     pub fn collect_results(&self, goal_id: GoalId) -> Vec<(TaskId, Option<&TaskResult>)> {
         if let Some(goal) = self.goals.get(&goal_id) {
-            goal.task_ids.iter()
+            goal.task_ids
+                .iter()
                 .filter_map(|tid| self.tasks.get(tid).map(|t| (*tid, t.result.as_ref())))
                 .collect()
         } else {
@@ -795,16 +834,48 @@ impl GoalRegistry {
 
     pub fn format_report(&self) -> String {
         let total_goals = self.goals.len();
-        let g_pending = self.goals.values().filter(|g| g.status == GoalStatus::Pending).count();
-        let g_active = self.goals.values().filter(|g| g.status == GoalStatus::Active).count();
-        let g_done = self.goals.values().filter(|g| g.status == GoalStatus::Completed).count();
-        let g_failed = self.goals.values().filter(|g| g.status == GoalStatus::Failed).count();
+        let g_pending = self
+            .goals
+            .values()
+            .filter(|g| g.status == GoalStatus::Pending)
+            .count();
+        let g_active = self
+            .goals
+            .values()
+            .filter(|g| g.status == GoalStatus::Active)
+            .count();
+        let g_done = self
+            .goals
+            .values()
+            .filter(|g| g.status == GoalStatus::Completed)
+            .count();
+        let g_failed = self
+            .goals
+            .values()
+            .filter(|g| g.status == GoalStatus::Failed)
+            .count();
 
         let total_tasks = self.tasks.len();
-        let t_waiting = self.tasks.values().filter(|t| t.status == TaskStatus::Waiting).count();
-        let t_running = self.tasks.values().filter(|t| t.status == TaskStatus::Running).count();
-        let t_done = self.tasks.values().filter(|t| t.status == TaskStatus::Done).count();
-        let t_failed = self.tasks.values().filter(|t| t.status == TaskStatus::Failed).count();
+        let t_waiting = self
+            .tasks
+            .values()
+            .filter(|t| t.status == TaskStatus::Waiting)
+            .count();
+        let t_running = self
+            .tasks
+            .values()
+            .filter(|t| t.status == TaskStatus::Running)
+            .count();
+        let t_done = self
+            .tasks
+            .values()
+            .filter(|t| t.status == TaskStatus::Done)
+            .count();
+        let t_failed = self
+            .tasks
+            .values()
+            .filter(|t| t.status == TaskStatus::Failed)
+            .count();
 
         let mut workers: Vec<NodeId> = self
             .tasks

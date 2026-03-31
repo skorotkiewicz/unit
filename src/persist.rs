@@ -9,10 +9,10 @@
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::types::{Cell, Entry, Instruction};
 use crate::features::fitness::FitnessTracker;
 use crate::goals::{Goal, GoalRegistry, GoalStatus, Task, TaskResult, TaskStatus};
 use crate::mesh::NodeId;
+use crate::types::{Cell, Entry, Instruction};
 
 const PERSIST_MAGIC: &[u8; 4] = b"USAV";
 const PERSIST_VERSION: u8 = 1;
@@ -21,36 +21,72 @@ const PERSIST_VERSION: u8 = 1;
 // Wire format helpers (duplicated from mesh.rs to avoid coupling)
 // ---------------------------------------------------------------------------
 
-fn write_u8(buf: &mut Vec<u8>, v: u8) { buf.push(v); }
-fn write_u16(buf: &mut Vec<u8>, v: u16) { buf.extend_from_slice(&v.to_be_bytes()); }
-fn write_u32(buf: &mut Vec<u8>, v: u32) { buf.extend_from_slice(&v.to_be_bytes()); }
-fn write_u64(buf: &mut Vec<u8>, v: u64) { buf.extend_from_slice(&v.to_be_bytes()); }
-fn write_i64(buf: &mut Vec<u8>, v: i64) { buf.extend_from_slice(&v.to_be_bytes()); }
-fn write_bytes(buf: &mut Vec<u8>, data: &[u8]) { buf.extend_from_slice(data); }
+fn write_u8(buf: &mut Vec<u8>, v: u8) {
+    buf.push(v);
+}
+fn write_u16(buf: &mut Vec<u8>, v: u16) {
+    buf.extend_from_slice(&v.to_be_bytes());
+}
+fn write_u32(buf: &mut Vec<u8>, v: u32) {
+    buf.extend_from_slice(&v.to_be_bytes());
+}
+fn write_u64(buf: &mut Vec<u8>, v: u64) {
+    buf.extend_from_slice(&v.to_be_bytes());
+}
+fn write_i64(buf: &mut Vec<u8>, v: i64) {
+    buf.extend_from_slice(&v.to_be_bytes());
+}
+fn write_bytes(buf: &mut Vec<u8>, data: &[u8]) {
+    buf.extend_from_slice(data);
+}
 
 fn read_u8(data: &[u8], pos: &mut usize) -> Option<u8> {
-    if *pos >= data.len() { return None; }
-    let v = data[*pos]; *pos += 1; Some(v)
+    if *pos >= data.len() {
+        return None;
+    }
+    let v = data[*pos];
+    *pos += 1;
+    Some(v)
 }
 fn read_u16(data: &[u8], pos: &mut usize) -> Option<u16> {
-    if *pos + 2 > data.len() { return None; }
-    let v = u16::from_be_bytes([data[*pos], data[*pos + 1]]); *pos += 2; Some(v)
+    if *pos + 2 > data.len() {
+        return None;
+    }
+    let v = u16::from_be_bytes([data[*pos], data[*pos + 1]]);
+    *pos += 2;
+    Some(v)
 }
 fn read_u32(data: &[u8], pos: &mut usize) -> Option<u32> {
-    if *pos + 4 > data.len() { return None; }
-    let v = u32::from_be_bytes(data[*pos..*pos + 4].try_into().ok()?); *pos += 4; Some(v)
+    if *pos + 4 > data.len() {
+        return None;
+    }
+    let v = u32::from_be_bytes(data[*pos..*pos + 4].try_into().ok()?);
+    *pos += 4;
+    Some(v)
 }
 fn read_u64(data: &[u8], pos: &mut usize) -> Option<u64> {
-    if *pos + 8 > data.len() { return None; }
-    let v = u64::from_be_bytes(data[*pos..*pos + 8].try_into().ok()?); *pos += 8; Some(v)
+    if *pos + 8 > data.len() {
+        return None;
+    }
+    let v = u64::from_be_bytes(data[*pos..*pos + 8].try_into().ok()?);
+    *pos += 8;
+    Some(v)
 }
 fn read_i64(data: &[u8], pos: &mut usize) -> Option<i64> {
-    if *pos + 8 > data.len() { return None; }
-    let v = i64::from_be_bytes(data[*pos..*pos + 8].try_into().ok()?); *pos += 8; Some(v)
+    if *pos + 8 > data.len() {
+        return None;
+    }
+    let v = i64::from_be_bytes(data[*pos..*pos + 8].try_into().ok()?);
+    *pos += 8;
+    Some(v)
 }
 fn read_bytes(data: &[u8], pos: &mut usize, n: usize) -> Option<Vec<u8>> {
-    if *pos + n > data.len() { return None; }
-    let v = data[*pos..*pos + n].to_vec(); *pos += n; Some(v)
+    if *pos + n > data.len() {
+        return None;
+    }
+    let v = data[*pos..*pos + n].to_vec();
+    *pos += n;
+    Some(v)
 }
 fn read_string(data: &[u8], pos: &mut usize) -> Option<String> {
     let len = read_u16(data, pos)? as usize;
@@ -69,12 +105,30 @@ fn write_string(buf: &mut Vec<u8>, s: &str) {
 
 fn serialize_instruction(buf: &mut Vec<u8>, instr: &Instruction) {
     match instr {
-        Instruction::Primitive(id) => { write_u8(buf, 0); write_u32(buf, *id as u32); }
-        Instruction::Literal(val) => { write_u8(buf, 1); write_i64(buf, *val); }
-        Instruction::Call(idx) => { write_u8(buf, 2); write_u32(buf, *idx as u32); }
-        Instruction::StringLit(s) => { write_u8(buf, 3); write_string(buf, s); }
-        Instruction::Branch(off) => { write_u8(buf, 4); write_i64(buf, *off); }
-        Instruction::BranchIfZero(off) => { write_u8(buf, 5); write_i64(buf, *off); }
+        Instruction::Primitive(id) => {
+            write_u8(buf, 0);
+            write_u32(buf, *id as u32);
+        }
+        Instruction::Literal(val) => {
+            write_u8(buf, 1);
+            write_i64(buf, *val);
+        }
+        Instruction::Call(idx) => {
+            write_u8(buf, 2);
+            write_u32(buf, *idx as u32);
+        }
+        Instruction::StringLit(s) => {
+            write_u8(buf, 3);
+            write_string(buf, s);
+        }
+        Instruction::Branch(off) => {
+            write_u8(buf, 4);
+            write_i64(buf, *off);
+        }
+        Instruction::BranchIfZero(off) => {
+            write_u8(buf, 5);
+            write_i64(buf, *off);
+        }
     }
 }
 
@@ -117,8 +171,7 @@ pub fn serialize_snapshot(snap: &VmSnapshot) -> Vec<u8> {
     write_u32(&mut buf, snap.dictionary.len() as u32);
     for entry in &snap.dictionary {
         write_string(&mut buf, &entry.name);
-        let flags = (if entry.immediate { 1u8 } else { 0 })
-            | (if entry.hidden { 2u8 } else { 0 });
+        let flags = (if entry.immediate { 1u8 } else { 0 }) | (if entry.hidden { 2u8 } else { 0 });
         write_u8(&mut buf, flags);
         write_u32(&mut buf, entry.body.len() as u32);
         for instr in &entry.body {
@@ -141,7 +194,10 @@ pub fn serialize_snapshot(snap: &VmSnapshot) -> Vec<u8> {
         write_u64(&mut buf, goal.id);
         write_string(&mut buf, &goal.description);
         match &goal.code {
-            Some(c) => { write_u8(&mut buf, 1); write_string(&mut buf, c); }
+            Some(c) => {
+                write_u8(&mut buf, 1);
+                write_string(&mut buf, c);
+            }
             None => write_u8(&mut buf, 0),
         }
         write_i64(&mut buf, goal.priority);
@@ -163,7 +219,10 @@ pub fn serialize_snapshot(snap: &VmSnapshot) -> Vec<u8> {
         write_string(&mut buf, &task.description);
         write_u8(&mut buf, task.status.as_u8());
         match &task.assigned_to {
-            Some(id) => { write_u8(&mut buf, 1); write_bytes(&mut buf, id); }
+            Some(id) => {
+                write_u8(&mut buf, 1);
+                write_bytes(&mut buf, id);
+            }
             None => write_u8(&mut buf, 0),
         }
         write_u64(&mut buf, task.created_at);
@@ -172,7 +231,9 @@ pub fn serialize_snapshot(snap: &VmSnapshot) -> Vec<u8> {
                 write_u8(&mut buf, 1);
                 write_u8(&mut buf, if r.success { 1 } else { 0 });
                 write_u16(&mut buf, r.stack_snapshot.len() as u16);
-                for &v in &r.stack_snapshot { write_i64(&mut buf, v); }
+                for &v in &r.stack_snapshot {
+                    write_i64(&mut buf, v);
+                }
                 write_string(&mut buf, &r.output);
                 write_string(&mut buf, r.error.as_deref().unwrap_or(""));
             }
@@ -201,9 +262,13 @@ pub fn deserialize_snapshot(data: &[u8]) -> Option<VmSnapshot> {
 
     // Header.
     let magic = read_bytes(data, &mut pos, 4)?;
-    if magic != PERSIST_MAGIC { return None; }
+    if magic != PERSIST_MAGIC {
+        return None;
+    }
     let version = read_u8(data, &mut pos)?;
-    if version != PERSIST_VERSION { return None; }
+    if version != PERSIST_VERSION {
+        return None;
+    }
     let id_bytes = read_bytes(data, &mut pos, 8)?;
     let mut node_id = [0u8; 8];
     node_id.copy_from_slice(&id_bytes);
@@ -242,7 +307,11 @@ pub fn deserialize_snapshot(data: &[u8]) -> Option<VmSnapshot> {
         let id = read_u64(data, &mut pos)?;
         let description = read_string(data, &mut pos)?;
         let has_code = read_u8(data, &mut pos)? != 0;
-        let code = if has_code { Some(read_string(data, &mut pos)?) } else { None };
+        let code = if has_code {
+            Some(read_string(data, &mut pos)?)
+        } else {
+            None
+        };
         let priority = read_i64(data, &mut pos)?;
         let status = GoalStatus::from_u8(read_u8(data, &mut pos)?);
         let creator_bytes = read_bytes(data, &mut pos, 8)?;
@@ -251,8 +320,22 @@ pub fn deserialize_snapshot(data: &[u8]) -> Option<VmSnapshot> {
         let created_at = read_u64(data, &mut pos)?;
         let task_count = read_u16(data, &mut pos)? as usize;
         let mut task_ids = Vec::with_capacity(task_count);
-        for _ in 0..task_count { task_ids.push(read_u64(data, &mut pos)?); }
-        goals.goals.insert(id, Goal { id, description, code, priority, status, created_at, creator, task_ids });
+        for _ in 0..task_count {
+            task_ids.push(read_u64(data, &mut pos)?);
+        }
+        goals.goals.insert(
+            id,
+            Goal {
+                id,
+                description,
+                code,
+                priority,
+                status,
+                created_at,
+                creator,
+                task_ids,
+            },
+        );
     }
 
     // Tasks.
@@ -265,21 +348,50 @@ pub fn deserialize_snapshot(data: &[u8]) -> Option<VmSnapshot> {
         let has_assignee = read_u8(data, &mut pos)? != 0;
         let assigned_to = if has_assignee {
             let b = read_bytes(data, &mut pos, 8)?;
-            let mut id = [0u8; 8]; id.copy_from_slice(&b); Some(id)
-        } else { None };
+            let mut id = [0u8; 8];
+            id.copy_from_slice(&b);
+            Some(id)
+        } else {
+            None
+        };
         let created_at = read_u64(data, &mut pos)?;
         let has_result = read_u8(data, &mut pos)? != 0;
         let result = if has_result {
             let success = read_u8(data, &mut pos)? != 0;
             let slen = read_u16(data, &mut pos)? as usize;
             let mut stack_snapshot = Vec::with_capacity(slen);
-            for _ in 0..slen { stack_snapshot.push(read_i64(data, &mut pos)?); }
+            for _ in 0..slen {
+                stack_snapshot.push(read_i64(data, &mut pos)?);
+            }
             let output = read_string(data, &mut pos)?;
             let err_str = read_string(data, &mut pos)?;
-            let error = if err_str.is_empty() { None } else { Some(err_str) };
-            Some(TaskResult { stack_snapshot, output, success, error })
-        } else { None };
-        goals.tasks.insert(id, Task { id, goal_id, description, code: None, assigned_to, status, result, created_at });
+            let error = if err_str.is_empty() {
+                None
+            } else {
+                Some(err_str)
+            };
+            Some(TaskResult {
+                stack_snapshot,
+                output,
+                success,
+                error,
+            })
+        } else {
+            None
+        };
+        goals.tasks.insert(
+            id,
+            Task {
+                id,
+                goal_id,
+                description,
+                code: None,
+                assigned_to,
+                status,
+                result,
+                created_at,
+            },
+        );
     }
 
     // Fitness.
@@ -315,7 +427,10 @@ pub fn deserialize_snapshot(data: &[u8]) -> Option<VmSnapshot> {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn state_dir(node_id: &NodeId) -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let id_hex = node_id.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+    let id_hex = node_id
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>();
     format!("{}/.unit/{}", home, id_hex)
 }
 
@@ -432,7 +547,9 @@ pub fn rename_state(old_id: &NodeId, new_id: &NodeId) -> Result<(), String> {
     let new_dir = state_dir(new_id);
     if std::fs::metadata(&old_dir).is_ok() {
         std::fs::create_dir_all(
-            std::path::Path::new(&new_dir).parent().unwrap_or(std::path::Path::new(".")),
+            std::path::Path::new(&new_dir)
+                .parent()
+                .unwrap_or(std::path::Path::new(".")),
         )
         .map_err(|e| format!("mkdir: {}", e))?;
         std::fs::rename(&old_dir, &new_dir).map_err(|e| format!("rename: {}", e))?;
@@ -442,25 +559,47 @@ pub fn rename_state(old_id: &NodeId, new_id: &NodeId) -> Result<(), String> {
 
 // WASM stubs
 #[cfg(target_arch = "wasm32")]
-pub fn load_node_id() -> Option<NodeId> { None }
+pub fn load_node_id() -> Option<NodeId> {
+    None
+}
 #[cfg(target_arch = "wasm32")]
-pub fn save_node_id(_: &NodeId) -> Result<(), String> { Ok(()) }
+pub fn save_node_id(_: &NodeId) -> Result<(), String> {
+    Ok(())
+}
 #[cfg(target_arch = "wasm32")]
-pub fn delete_node_id() -> Result<(), String> { Ok(()) }
+pub fn delete_node_id() -> Result<(), String> {
+    Ok(())
+}
 #[cfg(target_arch = "wasm32")]
-pub fn rename_state(_: &NodeId, _: &NodeId) -> Result<(), String> { Ok(()) }
+pub fn rename_state(_: &NodeId, _: &NodeId) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(target_arch = "wasm32")]
-pub fn state_dir(_: &NodeId) -> String { String::new() }
+pub fn state_dir(_: &NodeId) -> String {
+    String::new()
+}
 #[cfg(target_arch = "wasm32")]
-pub fn save_state(_: &NodeId, _: &[u8]) -> Result<(), String> { Err("no persistence on WASM".into()) }
+pub fn save_state(_: &NodeId, _: &[u8]) -> Result<(), String> {
+    Err("no persistence on WASM".into())
+}
 #[cfg(target_arch = "wasm32")]
-pub fn load_state(_: &NodeId) -> Option<Vec<u8>> { None }
+pub fn load_state(_: &NodeId) -> Option<Vec<u8>> {
+    None
+}
 #[cfg(target_arch = "wasm32")]
-pub fn save_snapshot(_: &NodeId, _: &[u8]) -> Result<String, String> { Err("no persistence on WASM".into()) }
+pub fn save_snapshot(_: &NodeId, _: &[u8]) -> Result<String, String> {
+    Err("no persistence on WASM".into())
+}
 #[cfg(target_arch = "wasm32")]
-pub fn list_snapshots(_: &NodeId) -> Vec<String> { vec![] }
+pub fn list_snapshots(_: &NodeId) -> Vec<String> {
+    vec![]
+}
 #[cfg(target_arch = "wasm32")]
-pub fn load_snapshot(_: &NodeId, _: &str) -> Option<Vec<u8>> { None }
+pub fn load_snapshot(_: &NodeId, _: &str) -> Option<Vec<u8>> {
+    None
+}
 #[cfg(target_arch = "wasm32")]
-pub fn delete_state(_: &NodeId) -> Result<(), String> { Ok(()) }
+pub fn delete_state(_: &NodeId) -> Result<(), String> {
+    Ok(())
+}

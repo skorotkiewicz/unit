@@ -56,7 +56,9 @@ pub struct NativePlatform;
 
 #[cfg(not(target_arch = "wasm32"))]
 impl NativePlatform {
-    pub fn new() -> Self { NativePlatform }
+    pub fn new() -> Self {
+        NativePlatform
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -111,7 +113,9 @@ impl Platform for NativePlatform {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         std::fs::read(format!("{}/.unit/{}", home, key)).ok()
     }
-    fn name(&self) -> &str { "native" }
+    fn name(&self) -> &str {
+        "native"
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -123,29 +127,57 @@ pub struct WasmPlatform;
 
 #[cfg(target_arch = "wasm32")]
 impl WasmPlatform {
-    pub fn new() -> Self { WasmPlatform }
+    pub fn new() -> Self {
+        WasmPlatform
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl Platform for WasmPlatform {
-    fn file_read(&self, _: &str) -> Result<Vec<u8>, String> { Err("no filesystem on WASM".into()) }
-    fn file_write(&self, _: &str, _: &[u8]) -> Result<(), String> { Err("no filesystem on WASM".into()) }
-    fn file_exists(&self, _: &str) -> bool { false }
-    fn file_list(&self, _: &str) -> Result<Vec<String>, String> { Err("no filesystem on WASM".into()) }
-    fn file_delete(&self, _: &str) -> Result<(), String> { Err("no filesystem on WASM".into()) }
-    fn http_get(&self, _: &str) -> Result<(Vec<u8>, u16), String> { Err("use fetch() from JS".into()) }
-    fn http_post(&self, _: &str, _: &[u8]) -> Result<(Vec<u8>, u16), String> { Err("use fetch() from JS".into()) }
-    fn shell_exec(&self, _: &str) -> Result<(Vec<u8>, i32), String> { Err("no shell on WASM".into()) }
-    fn env_var(&self, _: &str) -> Option<String> { None }
-    fn timestamp(&self) -> i64 { 0 } // JS should provide via extern
-    fn sleep_ms(&self, _: u64) { } // no blocking sleep on WASM
+    fn file_read(&self, _: &str) -> Result<Vec<u8>, String> {
+        Err("no filesystem on WASM".into())
+    }
+    fn file_write(&self, _: &str, _: &[u8]) -> Result<(), String> {
+        Err("no filesystem on WASM".into())
+    }
+    fn file_exists(&self, _: &str) -> bool {
+        false
+    }
+    fn file_list(&self, _: &str) -> Result<Vec<String>, String> {
+        Err("no filesystem on WASM".into())
+    }
+    fn file_delete(&self, _: &str) -> Result<(), String> {
+        Err("no filesystem on WASM".into())
+    }
+    fn http_get(&self, _: &str) -> Result<(Vec<u8>, u16), String> {
+        Err("use fetch() from JS".into())
+    }
+    fn http_post(&self, _: &str, _: &[u8]) -> Result<(Vec<u8>, u16), String> {
+        Err("use fetch() from JS".into())
+    }
+    fn shell_exec(&self, _: &str) -> Result<(Vec<u8>, i32), String> {
+        Err("no shell on WASM".into())
+    }
+    fn env_var(&self, _: &str) -> Option<String> {
+        None
+    }
+    fn timestamp(&self) -> i64 {
+        0
+    } // JS should provide via extern
+    fn sleep_ms(&self, _: u64) {} // no blocking sleep on WASM
     fn random_bytes(&self, buf: &mut [u8]) {
         // Simple fallback; JS should provide crypto.getRandomValues
         for (i, b) in buf.iter_mut().enumerate() {
             *b = (i as u8).wrapping_mul(137).wrapping_add(42);
         }
     }
-    fn save_state(&self, _: &str, _: &[u8]) -> Result<(), String> { Err("use localStorage from JS".into()) }
-    fn load_state(&self, _: &str) -> Option<Vec<u8>> { None }
-    fn name(&self) -> &str { "wasm" }
+    fn save_state(&self, _: &str, _: &[u8]) -> Result<(), String> {
+        Err("use localStorage from JS".into())
+    }
+    fn load_state(&self, _: &str) -> Option<Vec<u8>> {
+        None
+    }
+    fn name(&self) -> &str {
+        "wasm"
+    }
 }

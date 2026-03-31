@@ -250,7 +250,9 @@ impl super::VM {
                         }
                         Instruction::StringLit(s) => out.push_str(&format!(".\" {}\" ", s)),
                         Instruction::Branch(off) => out.push_str(&format!("BRANCH({}) ", off)),
-                        Instruction::BranchIfZero(off) => out.push_str(&format!("0BRANCH({}) ", off)),
+                        Instruction::BranchIfZero(off) => {
+                            out.push_str(&format!("0BRANCH({}) ", off))
+                        }
                     }
                 }
                 out.push_str(";\n");

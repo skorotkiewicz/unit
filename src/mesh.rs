@@ -129,12 +129,7 @@ fn read_u32(data: &[u8], pos: &mut usize) -> Option<u32> {
     if *pos + 4 > data.len() {
         return None;
     }
-    let v = u32::from_be_bytes([
-        data[*pos],
-        data[*pos + 1],
-        data[*pos + 2],
-        data[*pos + 3],
-    ]);
+    let v = u32::from_be_bytes([data[*pos], data[*pos + 1], data[*pos + 2], data[*pos + 3]]);
     *pos += 4;
     Some(v)
 }
@@ -525,11 +520,15 @@ impl MeshNode {
         out.push_str(&format!("port:     {}\n", st.port));
         out.push_str(&format!("load:     {}/{}\n", st.load, st.capacity));
         out.push_str(&format!("peers:    {}\n", st.peers.len()));
-        for (_, peer) in &st.peers {
+        for peer in st.peers.values() {
             let age = peer.last_seen.elapsed().as_secs();
             out.push_str(&format!(
                 "  {} @ {} load={}/{} seen={}s ago\n",
-                id_to_hex(&peer.id), peer.addr, peer.load, peer.capacity, age
+                id_to_hex(&peer.id),
+                peer.addr,
+                peer.load,
+                peer.capacity,
+                age
             ));
         }
         if !st.proposals.is_empty() {
@@ -537,8 +536,11 @@ impl MeshNode {
             for (pid, prop) in &st.proposals {
                 out.push_str(&format!(
                     "  #{:016x} by {} yes={} no={} committed={}\n",
-                    pid, id_to_hex(&prop.proposer),
-                    prop.votes_yes.len(), prop.votes_no.len(), prop.committed
+                    pid,
+                    id_to_hex(&prop.proposer),
+                    prop.votes_yes.len(),
+                    prop.votes_no.len(),
+                    prop.committed
                 ));
             }
         }
@@ -576,30 +578,24 @@ impl MeshNode {
 
     /// Propose replication to the mesh. Returns an error if on cooldown or
     /// if there are no peers to vote.
-    pub fn propose_replicate(
-        &self,
-        reason: &str,
-        state_bytes: Vec<u8>,
-    ) -> Result<(), String> {
+    pub fn propose_replicate(&self, reason: &str, state_bytes: Vec<u8>) -> Result<(), String> {
         let mut st = self.state.lock().unwrap();
 
         // Anti-spam: check cooldown.
         if let Some(last) = st.last_proposal_time {
             if last.elapsed() < PROPOSAL_COOLDOWN {
                 let remaining = PROPOSAL_COOLDOWN - last.elapsed();
-                return Err(format!(
-                    "cooldown: wait {}s",
-                    remaining.as_secs()
-                ));
+                return Err(format!("cooldown: wait {}s", remaining.as_secs()));
             }
         }
 
         // Anti-spam: only one active proposal per node.
         for prop in st.proposals.values() {
-            if prop.proposer == self.id && !prop.committed {
-                if prop.started.elapsed() < PROPOSAL_TIMEOUT {
-                    return Err("already have an active proposal".into());
-                }
+            if prop.proposer == self.id
+                && !prop.committed
+                && prop.started.elapsed() < PROPOSAL_TIMEOUT
+            {
+                return Err("already have an active proposal".into());
             }
         }
 
@@ -630,7 +626,10 @@ impl MeshNode {
         };
 
         st.proposals.insert(proposal_id, proposal);
-        st.log_event(format!("proposed replication #{:016x}: {}", proposal_id, reason));
+        st.log_event(format!(
+            "proposed replication #{:016x}: {}",
+            proposal_id, reason
+        ));
         drop(st);
 
         // Broadcast PROPOSE to all peers.
@@ -663,12 +662,9 @@ impl MeshNode {
     /// If `code` is Some, the goal carries executable Forth code.
     pub fn create_goal(&self, description: &str, priority: Cell, code: Option<String>) -> GoalId {
         let mut st = self.state.lock().unwrap();
-        let goal_id = st.goals.create_goal(
-            description.to_string(),
-            priority,
-            self.id,
-            code,
-        );
+        let goal_id = st
+            .goals
+            .create_goal(description.to_string(), priority, self.id, code);
         st.log_event(format!("goal #{} created: {}", goal_id, description));
 
         // Get the goal and its tasks for broadcasting.
@@ -703,7 +699,10 @@ impl MeshNode {
         let result = st.goals.claim_task(self.id);
 
         if let Some((task_id, goal_id, ref desc)) = result {
-            st.log_event(format!("claimed task #{} (goal #{}): {}", task_id, goal_id, desc));
+            st.log_event(format!(
+                "claimed task #{} (goal #{}): {}",
+                task_id, goal_id, desc
+            ));
             let port = st.port;
             let peers: Vec<SocketAddr> = st.peers.values().map(|p| p.addr).collect();
             drop(st);
@@ -904,9 +903,7 @@ impl MeshNode {
 
     /// Check for an incoming replication package (non-blocking).
     pub fn recv_replication(&self) -> Option<Vec<u8>> {
-        self.repl_rx
-            .as_ref()
-            .and_then(|rx| rx.try_recv().ok())
+        self.repl_rx.as_ref().and_then(|rx| rx.try_recv().ok())
     }
 
     /// Lock the shared state for direct access.
@@ -929,18 +926,34 @@ impl MeshNode {
     /// Get detailed peer info for the visualizer.
     pub fn peer_details(&self) -> Vec<(String, i64, String)> {
         let st = self.state.lock().unwrap();
-        st.peers.values().map(|p| {
-            (id_to_hex(&p.id), p.fitness, p.addr.to_string())
-        }).collect()
+        st.peers
+            .values()
+            .map(|p| (id_to_hex(&p.id), p.fitness, p.addr.to_string()))
+            .collect()
     }
 
     /// Get goal statistics.
     pub fn goal_stats(&self) -> (usize, usize, usize, usize) {
         let st = self.state.lock().unwrap();
         let total = st.goals.goals.len();
-        let pending = st.goals.goals.values().filter(|g| g.status == crate::goals::GoalStatus::Pending).count();
-        let active = st.goals.goals.values().filter(|g| g.status == crate::goals::GoalStatus::Active).count();
-        let completed = st.goals.goals.values().filter(|g| g.status == crate::goals::GoalStatus::Completed).count();
+        let pending = st
+            .goals
+            .goals
+            .values()
+            .filter(|g| g.status == crate::goals::GoalStatus::Pending)
+            .count();
+        let active = st
+            .goals
+            .goals
+            .values()
+            .filter(|g| g.status == crate::goals::GoalStatus::Active)
+            .count();
+        let completed = st
+            .goals
+            .goals
+            .values()
+            .filter(|g| g.status == crate::goals::GoalStatus::Completed)
+            .count();
         (total, pending, active, completed)
     }
 
@@ -973,10 +986,7 @@ impl MeshNode {
     }
 
     /// Start a discovery listener on the shared beacon port.
-    pub(crate) fn start_discovery_listener(
-        state: Arc<Mutex<MeshState>>,
-        my_id: NodeId,
-    ) {
+    pub(crate) fn start_discovery_listener(state: Arc<Mutex<MeshState>>, my_id: NodeId) {
         let addr = format!("0.0.0.0:{}", DISCOVERY_PORT);
         let sock = match UdpSocket::bind(&addr) {
             Ok(s) => s,
@@ -990,23 +1000,34 @@ impl MeshNode {
             loop {
                 {
                     let st = state.lock().unwrap();
-                    if !st.running { return; }
+                    if !st.running {
+                        return;
+                    }
                 }
                 if let Ok((len, src)) = sock.recv_from(&mut buf) {
-                    if len < HEADER_SIZE { continue; }
-                    if &buf[0..4] != MAGIC { continue; }
+                    if len < HEADER_SIZE {
+                        continue;
+                    }
+                    if &buf[0..4] != MAGIC {
+                        continue;
+                    }
                     let msg_type = buf[4];
-                    if msg_type != MSG_DISCOVERY_BEACON { continue; }
+                    if msg_type != MSG_DISCOVERY_BEACON {
+                        continue;
+                    }
                     let mut sender_id = [0u8; 8];
                     sender_id.copy_from_slice(&buf[5..13]);
-                    if sender_id == my_id { continue; } // ignore own beacon
+                    if sender_id == my_id {
+                        continue;
+                    } // ignore own beacon
                     let sender_port = u16::from_be_bytes([buf[13], buf[14]]);
                     let peer_addr: std::net::SocketAddr =
                         format!("{}:{}", src.ip(), sender_port).parse().unwrap();
 
                     let mut st = state.lock().unwrap();
-                    if !st.peers.contains_key(&sender_id) {
-                        st.peers.insert(sender_id, PeerInfo {
+                    if let std::collections::hash_map::Entry::Vacant(e) = st.peers.entry(sender_id)
+                    {
+                        e.insert(PeerInfo {
                             addr: peer_addr,
                             id: sender_id,
                             load: 0,
@@ -1017,7 +1038,8 @@ impl MeshNode {
                         });
                         st.log_event(format!(
                             "discovered {} via beacon @ {}",
-                            id_to_hex(&sender_id), peer_addr
+                            id_to_hex(&sender_id),
+                            peer_addr
                         ));
                     }
                 }
@@ -1071,9 +1093,13 @@ impl MeshNode {
     /// Check if autonomous spawning should be triggered.
     pub fn should_auto_spawn(&self) -> bool {
         let st = self.state.lock().unwrap();
-        if !st.auto_spawn { return false; }
+        if !st.auto_spawn {
+            return false;
+        }
         let units = st.peers.len() + 1;
-        if units >= st.max_units { return false; }
+        if units >= st.max_units {
+            return false;
+        }
         let pending = st.goals.pending_task_count();
         pending > units
     }
@@ -1081,9 +1107,13 @@ impl MeshNode {
     /// Check if this unit should autonomously cull itself.
     pub fn should_auto_cull(&self) -> bool {
         let st = self.state.lock().unwrap();
-        if !st.auto_cull { return false; }
+        if !st.auto_cull {
+            return false;
+        }
         let units = st.peers.len() + 1;
-        if units <= st.min_units { return false; }
+        if units <= st.min_units {
+            return false;
+        }
         // Cull if fitness is below mesh average.
         let my_fitness = st.fitness;
         let total: i64 = st.peers.values().map(|p| p.fitness).sum::<i64>() + my_fitness;
@@ -1101,7 +1131,9 @@ impl MeshNode {
              auto-discover: {} auto-share: {} auto-spawn: {} auto-cull: {}\n\
              shared words: {} pending word inbox: {}\n\
              ---\n",
-            units, st.min_units, st.max_units,
+            units,
+            st.min_units,
+            st.max_units,
             if st.auto_discover { "ON" } else { "OFF" },
             if st.auto_share { "ON" } else { "OFF" },
             if st.auto_spawn { "ON" } else { "OFF" },
@@ -1130,8 +1162,7 @@ impl MeshNode {
             TrustLevel::All => true,
             TrustLevel::Mesh => st.peers.contains_key(sender),
             TrustLevel::Family => {
-                st.parent_id.as_ref() == Some(sender)
-                    || st.children_ids.contains(sender)
+                st.parent_id.as_ref() == Some(sender) || st.children_ids.contains(sender)
             }
             TrustLevel::None => false,
         }
@@ -1148,7 +1179,11 @@ impl MeshNode {
     ) -> u32 {
         let mut st = self.state.lock().unwrap();
         // Rate limit: max 3 pending per peer.
-        let from_peer = st.pending_requests.iter().filter(|r| r.sender_id == sender).count();
+        let from_peer = st
+            .pending_requests
+            .iter()
+            .filter(|r| r.sender_id == sender)
+            .count();
         if from_peer >= 3 {
             return 0;
         }
@@ -1169,7 +1204,9 @@ impl MeshNode {
     /// Accept the oldest pending request. Returns sender info if found.
     pub fn accept_oldest(&self) -> Option<(NodeId, u32)> {
         let mut st = self.state.lock().unwrap();
-        if st.pending_requests.is_empty() { return None; }
+        if st.pending_requests.is_empty() {
+            return None;
+        }
         let req = st.pending_requests.remove(0);
         self.log_replication(&mut st, "incoming", &req.sender_id, &req.reason, "accepted");
         Some((req.sender_id, req.id))
@@ -1178,7 +1215,9 @@ impl MeshNode {
     /// Deny the oldest pending request.
     pub fn deny_oldest(&self) -> Option<u32> {
         let mut st = self.state.lock().unwrap();
-        if st.pending_requests.is_empty() { return None; }
+        if st.pending_requests.is_empty() {
+            return None;
+        }
         let req = st.pending_requests.remove(0);
         self.log_replication(&mut st, "incoming", &req.sender_id, &req.reason, "denied");
         Some(req.id)
@@ -1188,15 +1227,17 @@ impl MeshNode {
     pub fn deny_all_requests(&self) -> usize {
         let mut st = self.state.lock().unwrap();
         let count = st.pending_requests.len();
-        let entries: Vec<ReplicationLogEntry> = st.pending_requests.iter().map(|req| {
-            ReplicationLogEntry {
+        let entries: Vec<ReplicationLogEntry> = st
+            .pending_requests
+            .iter()
+            .map(|req| ReplicationLogEntry {
                 timestamp: now_secs(),
                 direction: "incoming".into(),
                 peer_id: req.sender_id,
                 reason: req.reason.clone(),
                 result: "denied".into(),
-            }
-        }).collect();
+            })
+            .collect();
         for entry in entries {
             st.replication_log.push(entry);
         }
@@ -1208,7 +1249,8 @@ impl MeshNode {
     pub fn expire_requests(&self) {
         let mut st = self.state.lock().unwrap();
         let before = st.pending_requests.len();
-        st.pending_requests.retain(|r| r.received_at.elapsed().as_secs() < 60);
+        st.pending_requests
+            .retain(|r| r.received_at.elapsed().as_secs() < 60);
         let expired = before - st.pending_requests.len();
         if expired > 0 {
             st.log_event(format!("{} replication request(s) expired", expired));
@@ -1226,8 +1268,13 @@ impl MeshNode {
             let age = r.received_at.elapsed().as_secs();
             out.push_str(&format!(
                 "  #{} from {} gen={} fitness={} size={}KB age={}s: {}\n",
-                r.id, id_to_hex(&r.sender_id), r.sender_generation,
-                r.sender_fitness, r.package_size / 1024, age, r.reason
+                r.id,
+                id_to_hex(&r.sender_id),
+                r.sender_generation,
+                r.sender_fitness,
+                r.package_size / 1024,
+                age,
+                r.reason
             ));
         }
         out
@@ -1243,7 +1290,11 @@ impl MeshNode {
         for e in st.replication_log.iter().rev().take(20) {
             out.push_str(&format!(
                 "  {} {} {} [{}]: {}\n",
-                e.timestamp, e.direction, id_to_hex(&e.peer_id), e.result, e.reason
+                e.timestamp,
+                e.direction,
+                id_to_hex(&e.peer_id),
+                e.result,
+                e.reason
             ));
         }
         out
@@ -1396,9 +1447,7 @@ fn handle_packet(
         MSG_HEARTBEAT => {
             handle_heartbeat(data, &mut pos, sender_id, sender_addr, socket, state, my_id)
         }
-        MSG_PROPOSE => {
-            handle_propose(data, &mut pos, sender_id, sender_addr, socket, state, my_id)
-        }
+        MSG_PROPOSE => handle_propose(data, &mut pos, sender_id, sender_addr, socket, state, my_id),
         MSG_VOTE => handle_vote(data, &mut pos, sender_id, socket, state, my_id),
         MSG_COMMIT => handle_commit(data, &mut pos, sender_id, state),
         MSG_REJECT => handle_reject(data, &mut pos, sender_id, state),
@@ -1424,8 +1473,16 @@ fn handle_packet(
         MSG_REPLICATE_ACCEPT | MSG_REPLICATE_DENY => {
             // Handled by the sender's send_replicate_request flow.
             let mut st = state.lock().unwrap();
-            let result = if msg_type == MSG_REPLICATE_ACCEPT { "accepted" } else { "denied" };
-            st.log_event(format!("replication {} by {}", result, id_to_hex(&sender_id)));
+            let result = if msg_type == MSG_REPLICATE_ACCEPT {
+                "accepted"
+            } else {
+                "denied"
+            };
+            st.log_event(format!(
+                "replication {} by {}",
+                result,
+                id_to_hex(&sender_id)
+            ));
         }
         _ => {} // unknown message type — ignore
     }
@@ -1644,12 +1701,7 @@ fn handle_vote(
     ));
 }
 
-fn handle_commit(
-    data: &[u8],
-    pos: &mut usize,
-    sender_id: NodeId,
-    state: &Arc<Mutex<MeshState>>,
-) {
+fn handle_commit(data: &[u8], pos: &mut usize, sender_id: NodeId, state: &Arc<Mutex<MeshState>>) {
     let proposal_id = match read_u64(data, pos) {
         Some(v) => v,
         None => return,
@@ -1679,12 +1731,7 @@ fn handle_commit(
     });
 }
 
-fn handle_reject(
-    data: &[u8],
-    pos: &mut usize,
-    sender_id: NodeId,
-    state: &Arc<Mutex<MeshState>>,
-) {
+fn handle_reject(data: &[u8], pos: &mut usize, sender_id: NodeId, state: &Arc<Mutex<MeshState>>) {
     let proposal_id = match read_u64(data, pos) {
         Some(v) => v,
         None => return,
@@ -1699,12 +1746,7 @@ fn handle_reject(
     st.proposals.remove(&proposal_id);
 }
 
-fn handle_data(
-    data: &[u8],
-    pos: &mut usize,
-    sender_id: NodeId,
-    state: &Arc<Mutex<MeshState>>,
-) {
+fn handle_data(data: &[u8], pos: &mut usize, sender_id: NodeId, state: &Arc<Mutex<MeshState>>) {
     let data_len = match read_u16(data, pos) {
         Some(v) => v as usize,
         None => return,
@@ -1726,12 +1768,7 @@ fn handle_data(
 // ---------------------------------------------------------------------------
 
 /// Encode a full goal broadcast message (goal + all its tasks).
-fn encode_goal_broadcast(
-    my_id: &NodeId,
-    port: u16,
-    goal: &Goal,
-    tasks: &[Task],
-) -> Vec<u8> {
+fn encode_goal_broadcast(my_id: &NodeId, port: u16, goal: &Goal, tasks: &[Task]) -> Vec<u8> {
     let mut buf = Vec::with_capacity(256);
     encode_header(&mut buf, MSG_GOAL_BROADCAST, my_id, port);
     write_u64(&mut buf, goal.id);
@@ -1925,7 +1962,12 @@ fn handle_goal_broadcast(
             } else {
                 None
             };
-            Some(TaskResult { stack_snapshot, output, success, error })
+            Some(TaskResult {
+                stack_snapshot,
+                output,
+                success,
+                error,
+            })
         } else {
             None
         };
@@ -1961,7 +2003,10 @@ fn handle_goal_broadcast(
         st.goals.merge_task(task);
     }
     if is_new {
-        let desc = st.goals.goals.get(&goal_id)
+        let desc = st
+            .goals
+            .goals
+            .get(&goal_id)
             .map(|g| g.description.clone())
             .unwrap_or_else(|| "?".to_string());
         st.log_event(format!(
@@ -2100,7 +2145,11 @@ fn handle_replicate_request(
     // Reject if > 100MB.
     if package_size > 100_000_000 {
         let mut st = state.lock().unwrap();
-        st.log_event(format!("rejected oversized replication from {} ({}MB)", id_to_hex(&sender_id), package_size / 1_000_000));
+        st.log_event(format!(
+            "rejected oversized replication from {} ({}MB)",
+            id_to_hex(&sender_id),
+            package_size / 1_000_000
+        ));
         return;
     }
 
@@ -2111,8 +2160,7 @@ fn handle_replicate_request(
         TrustLevel::All => true,
         TrustLevel::Mesh => st.peers.contains_key(&sender_id),
         TrustLevel::Family => {
-            st.parent_id.as_ref() == Some(&sender_id)
-                || st.children_ids.contains(&sender_id)
+            st.parent_id.as_ref() == Some(&sender_id) || st.children_ids.contains(&sender_id)
         }
         TrustLevel::None => false,
     };
@@ -2121,7 +2169,8 @@ fn handle_replicate_request(
         let trust_label = st.trust_level.label().to_string();
         st.log_event(format!(
             "[auto-accepted from {} (trust: {})]",
-            id_to_hex(&sender_id), trust_label
+            id_to_hex(&sender_id),
+            trust_label
         ));
         // Send accept response.
         let port = st.port;
@@ -2133,9 +2182,16 @@ fn handle_replicate_request(
         }
     } else {
         // Queue for manual approval.
-        let from_peer = st.pending_requests.iter().filter(|r| r.sender_id == sender_id).count();
+        let from_peer = st
+            .pending_requests
+            .iter()
+            .filter(|r| r.sender_id == sender_id)
+            .count();
         if from_peer >= 3 {
-            st.log_event(format!("rate-limited replication from {}", id_to_hex(&sender_id)));
+            st.log_event(format!(
+                "rate-limited replication from {}",
+                id_to_hex(&sender_id)
+            ));
             return;
         }
         let rid = st.next_request_id;
@@ -2151,7 +2207,11 @@ fn handle_replicate_request(
         });
         st.log_event(format!(
             "[replication request #{} from {} (gen {}, fitness {}, {}KB) — ACCEPT or DENY]",
-            rid, id_to_hex(&sender_id), generation, fitness, package_size / 1024
+            rid,
+            id_to_hex(&sender_id),
+            generation,
+            fitness,
+            package_size / 1024
         ));
     }
 }
@@ -2192,7 +2252,11 @@ fn handle_word_share(
         origin: sender_id,
     });
     st.shared_words.push((name.clone(), sender_id));
-    st.log_event(format!("received word '{}' from {}", name, id_to_hex(&sender_id)));
+    st.log_event(format!(
+        "received word '{}' from {}",
+        name,
+        id_to_hex(&sender_id)
+    ));
 }
 
 /// Check if goal load warrants auto-replication.
@@ -2226,11 +2290,7 @@ fn check_auto_replication(state: &Arc<Mutex<MeshState>>) {
 }
 
 /// Check proposals for quorum or timeout, and act accordingly.
-fn check_proposals(
-    socket: &UdpSocket,
-    state: &Arc<Mutex<MeshState>>,
-    my_id: &NodeId,
-) {
+fn check_proposals(socket: &UdpSocket, state: &Arc<Mutex<MeshState>>, my_id: &NodeId) {
     let mut st = state.lock().unwrap();
     let port = st.port;
 
@@ -2278,8 +2338,7 @@ fn check_proposals(
 
             // Send COMMIT with serialized state.
             if let Some(state_bytes) = &prop.state_bytes {
-                let mut buf =
-                    Vec::with_capacity(HEADER_SIZE + 8 + 4 + state_bytes.len());
+                let mut buf = Vec::with_capacity(HEADER_SIZE + 8 + 4 + state_bytes.len());
                 encode_header(&mut buf, MSG_COMMIT, my_id, port);
                 write_u64(&mut buf, pid);
                 write_u32(&mut buf, state_bytes.len() as u32);
@@ -2406,8 +2465,7 @@ pub fn serialize_state(
         write_u16(&mut buf, name_bytes.len() as u16);
         write_bytes(&mut buf, name_bytes);
 
-        let flags = (if entry.immediate { 1u8 } else { 0 })
-            | (if entry.hidden { 2u8 } else { 0 });
+        let flags = (if entry.immediate { 1u8 } else { 0 }) | (if entry.hidden { 2u8 } else { 0 });
         write_u8(&mut buf, flags);
 
         write_u32(&mut buf, entry.body.len() as u32);
@@ -2420,8 +2478,8 @@ pub fn serialize_state(
     let mem_cells = here.min(memory.len());
     write_u32(&mut buf, here as u32);
     write_u32(&mut buf, mem_cells as u32);
-    for i in 0..mem_cells {
-        write_i64(&mut buf, memory[i]);
+    for val in memory.iter().take(mem_cells) {
+        write_i64(&mut buf, *val);
     }
 
     // Goals (appended after memory — backward compatible).

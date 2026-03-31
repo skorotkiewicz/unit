@@ -54,8 +54,11 @@ pub fn package_size_estimate(state_size: usize) -> Result<usize, String> {
     Ok(HEADER_SIZE + binary_size + state_size + prelude_size)
 }
 
+/// Result of unpacking a replication package: (binary, state, prelude).
+pub type UnpackedPackage = (Vec<u8>, Vec<u8>, Vec<u8>);
+
 /// Unpack a replication package. Returns (binary, state, prelude).
-pub fn unpack_package(data: &[u8]) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), String> {
+pub fn unpack_package(data: &[u8]) -> Result<UnpackedPackage, String> {
     if data.len() < HEADER_SIZE {
         return Err("package too small".into());
     }
@@ -113,6 +116,12 @@ pub struct SpawnState {
     pub quarantine: bool,
     pub last_spawn: Option<Instant>,
     pub spawn_cooldown_secs: u64,
+}
+
+impl Default for SpawnState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SpawnState {
@@ -184,8 +193,7 @@ pub fn spawn_local(
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = std::fs::Permissions::from_mode(0o755);
-        std::fs::set_permissions(&bin_path, perms)
-            .map_err(|e| format!("chmod: {}", e))?;
+        std::fs::set_permissions(&bin_path, perms).map_err(|e| format!("chmod: {}", e))?;
     }
 
     // Write state.
@@ -195,8 +203,11 @@ pub fn spawn_local(
         .map_err(|e| format!("write state: {}", e))?;
 
     // Write the node-id file so the child boots with this identity.
-    std::fs::write(format!("{}/.unit/spawn/{}/node-id", home, child_hex), &child_hex)
-        .map_err(|e| format!("write node-id: {}", e))?;
+    std::fs::write(
+        format!("{}/.unit/spawn/{}/node-id", home, child_hex),
+        &child_hex,
+    )
+    .map_err(|e| format!("write node-id: {}", e))?;
 
     // Pick a port: 0 = OS-assigned.
     let child_port = 0u16;
@@ -229,11 +240,8 @@ pub fn send_package(addr: &str, package: &[u8]) -> Result<(), String> {
     use std::net::TcpStream;
     use std::time::Duration;
 
-    let mut stream = TcpStream::connect(addr)
-        .map_err(|e| format!("connect {}: {}", addr, e))?;
-    stream
-        .set_write_timeout(Some(Duration::from_secs(30)))
-        .ok();
+    let mut stream = TcpStream::connect(addr).map_err(|e| format!("connect {}: {}", addr, e))?;
+    stream.set_write_timeout(Some(Duration::from_secs(30))).ok();
 
     // Send length prefix + package.
     let len_bytes = (package.len() as u64).to_be_bytes();
@@ -249,9 +257,7 @@ pub fn send_package(addr: &str, package: &[u8]) -> Result<(), String> {
 
 /// Listen for incoming replication packages on a TCP port.
 /// Runs in a background thread. Calls `on_receive` for each package.
-pub fn start_replication_listener(
-    port: u16,
-) -> Result<std::sync::mpsc::Receiver<Vec<u8>>, String> {
+pub fn start_replication_listener(port: u16) -> Result<std::sync::mpsc::Receiver<Vec<u8>>, String> {
     use std::io::Read;
     use std::net::TcpListener;
 
@@ -261,33 +267,31 @@ pub fn start_replication_listener(
     let (tx, rx) = std::sync::mpsc::channel();
 
     std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            if let Ok(mut stream) = stream {
-                stream
-                    .set_read_timeout(Some(std::time::Duration::from_secs(30)))
-                    .ok();
+        for mut stream in listener.incoming().flatten() {
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(30)))
+                .ok();
 
-                // Read length prefix.
-                let mut len_buf = [0u8; 8];
-                if stream.read_exact(&mut len_buf).is_err() {
-                    continue;
-                }
-                let pkg_len = u64::from_be_bytes(len_buf) as usize;
-                if pkg_len > 100_000_000 {
-                    // Sanity: reject > 100MB.
-                    continue;
-                }
+            // Read length prefix.
+            let mut len_buf = [0u8; 8];
+            if stream.read_exact(&mut len_buf).is_err() {
+                continue;
+            }
+            let pkg_len = u64::from_be_bytes(len_buf) as usize;
+            if pkg_len > 100_000_000 {
+                // Sanity: reject > 100MB.
+                continue;
+            }
 
-                // Read package.
-                let mut pkg = vec![0u8; pkg_len];
-                if stream.read_exact(&mut pkg).is_err() {
-                    continue;
-                }
+            // Read package.
+            let mut pkg = vec![0u8; pkg_len];
+            if stream.read_exact(&mut pkg).is_err() {
+                continue;
+            }
 
-                // Validate header.
-                if pkg.len() >= 4 && &pkg[0..4] == PACKAGE_MAGIC {
-                    let _ = tx.send(pkg);
-                }
+            // Validate header.
+            if pkg.len() >= 4 && &pkg[0..4] == PACKAGE_MAGIC {
+                let _ = tx.send(pkg);
             }
         }
     });

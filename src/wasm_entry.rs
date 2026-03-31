@@ -68,7 +68,11 @@ pub extern "C" fn eval(vm_ptr: *mut VM, input_ptr: *const u8, input_len: usize) 
 #[no_mangle]
 pub extern "C" fn is_running(vm_ptr: *mut VM) -> i32 {
     let vm = unsafe { &*vm_ptr };
-    if vm.running { 1 } else { 0 }
+    if vm.running {
+        1
+    } else {
+        0
+    }
 }
 
 /// Destroy a VM instance.

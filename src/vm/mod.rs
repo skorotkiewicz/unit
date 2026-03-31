@@ -3,16 +3,16 @@
 // This is the core nanobot: stacks, dictionary, memory, and the inner
 // interpreter. Everything else (mesh, goals, features) builds on top.
 
-pub mod primitives;
 pub mod compiler;
+pub mod primitives;
 
 #[cfg(test)]
 mod tests;
 
+use crate::types::{Cell, Entry, Instruction};
 use std::collections::{HashSet, VecDeque};
 use std::io::{self, Write};
 use std::time::Instant;
-use crate::types::{Cell, Entry, Instruction};
 
 // ---------------------------------------------------------------------------
 // Primitive IDs — assigned in registration order
@@ -284,7 +284,8 @@ pub struct VM {
     // --- Monitoring ---
     pub monitor: crate::features::monitor::MonitorState,
     // --- WebSocket bridge ---
-    pub ws_state: Option<std::sync::Arc<std::sync::Mutex<crate::features::ws_bridge::WsBridgeState>>>,
+    pub ws_state:
+        Option<std::sync::Arc<std::sync::Mutex<crate::features::ws_bridge::WsBridgeState>>>,
     pub ws_events: Option<std::sync::mpsc::Receiver<crate::features::ws_bridge::WsEvent>>,
     pub ws_mesh_json: std::sync::Arc<std::sync::Mutex<String>>,
     // --- Anonymous definition nesting depth (for interpret-mode control flow) ---
@@ -294,6 +295,12 @@ pub struct VM {
     pub auto_save_interval: u32,
     pub tasks_since_save: u32,
     pub node_id_cache: Option<[u8; 8]>,
+}
+
+impl Default for VM {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl VM {
@@ -651,10 +658,8 @@ impl VM {
         if let Some(idx) = self.find_word(word) {
             if self.dictionary[idx].immediate {
                 self.execute_word(idx);
-            } else {
-                if let Some(ref mut def) = self.current_def {
-                    def.body.push(Instruction::Call(idx));
-                }
+            } else if let Some(ref mut def) = self.current_def {
+                def.body.push(Instruction::Call(idx));
             }
             return;
         }
@@ -829,8 +834,14 @@ impl VM {
             P_ENV => self.io_immediate(8),
             P_TIMESTAMP => self.prim_timestamp(),
             P_SLEEP => self.prim_sleep(),
-            P_SANDBOX_ON => { self.sandbox_active = true; self.emit_str("sandbox: ON\n"); }
-            P_SANDBOX_OFF => { self.sandbox_active = false; self.emit_str("sandbox: OFF\n"); }
+            P_SANDBOX_ON => {
+                self.sandbox_active = true;
+                self.emit_str("sandbox: ON\n");
+            }
+            P_SANDBOX_OFF => {
+                self.sandbox_active = false;
+                self.emit_str("sandbox: OFF\n");
+            }
             P_IO_LOG => self.prim_io_log(),
             // Mutation
             P_MUTATE_RAND => self.prim_mutate_rand(),
@@ -838,7 +849,10 @@ impl VM {
             P_UNDO_MUTATE => self.prim_undo_mutate(),
             P_MUTATIONS => self.prim_mutations(),
             // Fitness
-            P_FITNESS => { let s = self.fitness.score; self.stack.push(s); }
+            P_FITNESS => {
+                let s = self.fitness.score;
+                self.stack.push(s);
+            }
             P_LEADERBOARD => self.prim_leaderboard(),
             P_RATE => self.prim_rate(),
             P_EVOLVE => self.prim_evolve(),
@@ -846,10 +860,25 @@ impl VM {
             P_BENCHMARK => self.prim_benchmark(),
             // Trust
             P_TRUST => self.prim_trust(),
-            P_TRUST_ALL => { self.trusted_peers.clear(); self.emit_str("trust: ALL (cleared)\n"); }
-            P_TRUST_NONE => { self.trusted_peers.clear(); self.emit_str("trust: NONE\n"); }
-            P_SHELL_ENABLE => { self.shell_enabled = !self.shell_enabled;
-                self.emit_str(&format!("shell: {}\n", if self.shell_enabled { "ENABLED" } else { "DISABLED" })); }
+            P_TRUST_ALL => {
+                self.trusted_peers.clear();
+                self.emit_str("trust: ALL (cleared)\n");
+            }
+            P_TRUST_NONE => {
+                self.trusted_peers.clear();
+                self.emit_str("trust: NONE\n");
+            }
+            P_SHELL_ENABLE => {
+                self.shell_enabled = !self.shell_enabled;
+                self.emit_str(&format!(
+                    "shell: {}\n",
+                    if self.shell_enabled {
+                        "ENABLED"
+                    } else {
+                        "DISABLED"
+                    }
+                ));
+            }
             // Identity
             P_REIDENTIFY => self.prim_reidentify(),
             // Persistence
@@ -878,38 +907,85 @@ impl VM {
             P_PACKAGE_SIZE => self.prim_package_size(),
             P_CHILDREN => self.prim_children(),
             P_FAMILY => self.prim_family(),
-            P_GENERATION => { let g = self.spawn_state.generation as Cell; self.stack.push(g); }
+            P_GENERATION => {
+                let g = self.spawn_state.generation as Cell;
+                self.stack.push(g);
+            }
             P_KILL_CHILD => self.prim_kill_child(),
             P_REPLICATE_TO => self.prim_replicate_to(),
-            P_ACCEPT_REPL => { self.spawn_state.accept_replicate = true; self.emit_str("accept-replicate: ON\n"); }
-            P_DENY_REPL => { self.spawn_state.accept_replicate = false; self.emit_str("accept-replicate: OFF\n"); }
-            P_QUARANTINE => { self.spawn_state.quarantine = !self.spawn_state.quarantine;
-                self.emit_str(&format!("quarantine: {}\n", if self.spawn_state.quarantine { "ON" } else { "OFF" })); }
-            P_MAX_CHILDREN => { let n = self.pop() as usize; self.spawn_state.max_children = n;
-                self.emit_str(&format!("max-children: {}\n", n)); }
+            P_ACCEPT_REPL => {
+                self.spawn_state.accept_replicate = true;
+                self.emit_str("accept-replicate: ON\n");
+            }
+            P_DENY_REPL => {
+                self.spawn_state.accept_replicate = false;
+                self.emit_str("accept-replicate: OFF\n");
+            }
+            P_QUARANTINE => {
+                self.spawn_state.quarantine = !self.spawn_state.quarantine;
+                self.emit_str(&format!(
+                    "quarantine: {}\n",
+                    if self.spawn_state.quarantine {
+                        "ON"
+                    } else {
+                        "OFF"
+                    }
+                ));
+            }
+            P_MAX_CHILDREN => {
+                let n = self.pop() as usize;
+                self.spawn_state.max_children = n;
+                self.emit_str(&format!("max-children: {}\n", n));
+            }
             // Monitoring & Ops
             P_WATCH_URL => self.prim_watch(0),
             P_WATCH_FILE => self.prim_watch(1),
             P_WATCH_PROC => self.prim_watch(2),
-            P_WATCHES => { let s = self.monitor.format_watches(); self.emit_str(&s); }
-            P_UNWATCH => { let id = self.pop() as u32; self.monitor.remove_watch(id);
-                self.emit_str(&format!("watch #{} removed\n", id)); }
-            P_WATCH_LOG => { let id = self.pop() as u32;
-                let s = self.monitor.format_watch_log(id); self.emit_str(&s); }
+            P_WATCHES => {
+                let s = self.monitor.format_watches();
+                self.emit_str(&s);
+            }
+            P_UNWATCH => {
+                let id = self.pop() as u32;
+                self.monitor.remove_watch(id);
+                self.emit_str(&format!("watch #{} removed\n", id));
+            }
+            P_WATCH_LOG => {
+                let id = self.pop() as u32;
+                let s = self.monitor.format_watch_log(id);
+                self.emit_str(&s);
+            }
             P_ON_ALERT => self.prim_on_alert(),
-            P_ALERTS => { let s = self.monitor.format_alerts(); self.emit_str(&s); }
-            P_ACK => { let id = self.pop() as u32; self.monitor.ack_alert(id);
-                self.emit_str(&format!("alert #{} acknowledged\n", id)); }
-            P_ALERT_HISTORY => { let s = self.monitor.format_alert_history(); self.emit_str(&s); }
+            P_ALERTS => {
+                let s = self.monitor.format_alerts();
+                self.emit_str(&s);
+            }
+            P_ACK => {
+                let id = self.pop() as u32;
+                self.monitor.ack_alert(id);
+                self.emit_str(&format!("alert #{} acknowledged\n", id));
+            }
+            P_ALERT_HISTORY => {
+                let s = self.monitor.format_alert_history();
+                self.emit_str(&s);
+            }
             P_DASHBOARD => self.prim_dashboard(),
             P_HEALTH => self.prim_health(),
-            P_UPTIME => { let id = self.pop() as u32;
+            P_UPTIME => {
+                let id = self.pop() as u32;
                 let pct = self.monitor.uptime(id);
-                self.emit_str(&format!("watch #{}: {:.1}% uptime\n", id, pct)); }
+                self.emit_str(&format!("watch #{}: {:.1}% uptime\n", id, pct));
+            }
             P_EVERY => self.prim_every(),
-            P_SCHEDULE => { let s = self.monitor.format_schedules(); self.emit_str(&s); }
-            P_UNSCHED => { let id = self.pop() as u32; self.monitor.remove_schedule(id);
-                self.emit_str(&format!("schedule #{} removed\n", id)); }
+            P_SCHEDULE => {
+                let s = self.monitor.format_schedules();
+                self.emit_str(&s);
+            }
+            P_UNSCHED => {
+                let id = self.pop() as u32;
+                self.monitor.remove_schedule(id);
+                self.emit_str(&format!("schedule #{} removed\n", id));
+            }
             P_HEAL => self.prim_heal(),
             P_HEALTH_PORT => {
                 let port = self.mesh.as_ref().map(|m| m.repl_port).unwrap_or(0);
@@ -920,8 +996,11 @@ impl VM {
             P_WS_STATUS => self.prim_ws_status(),
             P_WS_CLIENTS => self.prim_ws_clients(),
             P_WS_PORT => {
-                let port = self.ws_state.as_ref()
-                    .map(|s| s.lock().unwrap().port as Cell).unwrap_or(0);
+                let port = self
+                    .ws_state
+                    .as_ref()
+                    .map(|s| s.lock().unwrap().port as Cell)
+                    .unwrap_or(0);
                 self.stack.push(port);
             }
             P_WS_BROADCAST => self.prim_ws_broadcast(),
@@ -951,19 +1030,38 @@ impl VM {
             // Atom primitives
             P_GOAL_COUNT => self.prim_goal_count(),
             P_TASK_COUNT => self.prim_task_count(),
-            P_WATCH_COUNT => { let n = self.monitor.watches.len() as Cell; self.stack.push(n); }
-            P_ALERT_COUNT => { let n = self.monitor.alerts.len() as Cell; self.stack.push(n); }
-            P_CHILD_COUNT => { let n = self.spawn_state.children.len() as Cell; self.stack.push(n); }
+            P_WATCH_COUNT => {
+                let n = self.monitor.watches.len() as Cell;
+                self.stack.push(n);
+            }
+            P_ALERT_COUNT => {
+                let n = self.monitor.alerts.len() as Cell;
+                self.stack.push(n);
+            }
+            P_CHILD_COUNT => {
+                let n = self.spawn_state.children.len() as Cell;
+                self.stack.push(n);
+            }
             P_MESH_AVG_FITNESS => self.prim_mesh_avg_fitness(),
             P_CHECK_WATCHES => self.prim_check_watches(),
             P_RUN_HANDLERS => self.prim_run_handlers(),
-            P_RUN_BENCHMARK => { let s = self.run_benchmark(); self.stack.push(s); }
+            P_RUN_BENCHMARK => {
+                let s = self.run_benchmark();
+                self.stack.push(s);
+            }
             P_MUTATE_RANDOM => self.prim_mutate_random_atom(),
             P_UNDO_LAST_MUTATION => self.prim_undo_mutate(),
-            P_PEER_COUNT => { let n = self.mesh.as_ref().map(|m| m.peer_count()).unwrap_or(0) as Cell; self.stack.push(n); }
+            P_PEER_COUNT => {
+                let n = self.mesh.as_ref().map(|m| m.peer_count()).unwrap_or(0) as Cell;
+                self.stack.push(n);
+            }
             P_SMART_MUTATE => self.prim_smart_mutate(),
             P_MUTATION_REPORT => self.prim_mutation_report(),
-            P_MUTATION_STATS => { let s = self.mutation_stats.format(); self.emit_str(&s); self.emit_str("\n"); }
+            P_MUTATION_STATS => {
+                let s = self.mutation_stats.format();
+                self.emit_str(&s);
+                self.emit_str("\n");
+            }
             // Task decomposition
             P_SUBTASK => self.prim_subtask(),
             P_FORK => self.prim_fork(),
